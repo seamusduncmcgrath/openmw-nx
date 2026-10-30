@@ -1,0 +1,106 @@
+name: Build Switch NRO (GBK)
+
+on:
+  workflow_dispatch:
+
+env:
+  DEVKITPRO: /opt/devkitpro
+  DEVKITA64: /opt/devkitpro/devkitA64
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    timeout-minutes: 350
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Toolchain
+        run: |
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITA64/bin:$PATH"
+          ls "$DEVKITPRO" || true
+          which aarch64-none-elf-gcc || ls "$DEVKITA64/bin" | head -20
+          aarch64-none-elf-gcc --version
+
+      - name: Host tools
+        run: |
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITA64/bin:$PATH"
+          if command -v pacman >/dev/null 2>&1; then
+            pacman -Sy --noconfirm --needed base-devel cmake ninja python python-pip git unzip zip
+          elif command -v apt-get >/dev/null 2>&1; then
+            apt-get update
+            apt-get install -y cmake ninja-build python3 python3-pip git curl unzip zip
+          fi
+
+      - name: Generate GBK table
+        run: |
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITA64/bin:$PATH"
+          PY=python3; command -v python3 >/dev/null 2>&1 || PY=python
+          $PY --version
+          $PY patch/gen_gbk_table.py components/toutf8/gbk_table.h
+          wc -c components/toutf8/gbk_table.h
+
+      - name: Apply GBK patch
+        run: |
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITA64/bin:$PATH"
+          PY=python3; command -v python3 >/dev/null 2>&1 || PY=python
+          $PY patch/apply_gbk_patch.py
+          echo "--- GBK markers in toutf8.cpp ---"
+          grep -c "GBK" components/toutf8/toutf8.cpp
+          ls -l components/toutf8/
+
+      - name: Apply topic debug logging
+        run: |
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITA64/bin:$PATH"
+          PY=python3; command -v python3 >/dev/null 2>&1 || PY=python
+          $PY patch/apply_debug_topics.py || echo "debug patch skipped"
+
+      - name: Apply CJK topic matching fix
+        run: |
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITA64/bin:$PATH"
+          PY=python3; command -v python3 >/dev/null 2>&1 || PY=python
+          $PY patch/apply_topic_match_patch.py
+          grep -n "0xe0" apps/openmw/mwdialogue/keywordsearch.cpp
+
+      - name: Apply CJK line wrapping fix
+        run: |
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITA64/bin:$PATH"
+          PY=python3; command -v python3 >/dev/null 2>&1 || PY=python
+          $PY patch/apply_cjk_wrap.py
+          grep -n "ucsCJK" apps/openmw/mwgui/bookpage.cpp | head -5
+
+      - name: Apply CJK message box wrapping
+        run: |
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITA64/bin:$PATH"
+          PY=python3; command -v python3 >/dev/null 2>&1 || PY=python
+          $PY patch/apply_cjk_msgbox.py
+          grep -n "wrapCJKText" apps/openmw/mwgui/messagebox.cpp | head -5
+
+      - name: Apply Chinese cell names
+        run: |
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITA64/bin:$PATH"
+          PY=python3; command -v python3 >/dev/null 2>&1 || PY=python
+          $PY patch/apply_cellname.py
+          grep -n "translatedCellName" apps/openmw/mwworld/worldimp.cpp | head -5
+
+      - name: Build
+        run: |
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITA64/bin:$PATH"
+          chmod +x switch/build.sh
+          ./switch/build.sh 2>&1 | tee build.log
+          test -f build-switch/openmw.nro || { echo "::error::build produced no openmw.nro"; exit 1; }
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openmw-gbk-nro
+          path: |
+            build-switch/**/*.nro
+            build-switch/sdcard/**
+            build.log
+          if-no-files-found: warn

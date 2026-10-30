@@ -110,3 +110,20 @@ Command line options
                                             image and XML file in current directory
       --activate-dist arg (=-1)             activation distance override
       --random-seed arg (=<impl defined>)   seed value for random number generator
+
+---
+
+## GBK / Chinese text support
+
+Chinese (GBK) text support for the Nintendo Switch port.
+
+Copyright (C) 2026 mniswy
+
+Files under `patch/` and the changes in `components/toutf8/` are licensed
+under the GNU GPL v3, the same license as OpenMW (see `LICENSE`).
+The generated GBK table is derived from the standard GBK ↔ Unicode mapping
+and is not subject to copyright.
+
+- adds `encoding=gbk` and `encoding=utf8`
+- converts through a generated lookup table: no iconv, no locale data,
+  works on newlib
